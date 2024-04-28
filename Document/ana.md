@@ -654,6 +654,244 @@ prompt生成器继承于`Prompter`，需要重写里面的一些方法，其主�
 **可以看出，相关的数据集还是很多的，但是并不是全部的数据集都能完美契合与我们的目标，在之后需要增加prompt提示词的时候可能需要参考心理医生的一些判断理论，甚至构建知识图谱来增强模型的推理能力，而这些数据集现在很少使用在大预言模型上面**
 
 
+#### 1.3.2 LLM选择与构建可行性
 
+##### 1.3.2.1 调用ChatGPT的API
+
+**优势：**
+
+生态比较完整
+
+可以使用**langchain**构建自己的数据库，从而增加LLM的知识
+
+**劣势：**
+
+- 很难微调模型
+- 基本上不可能改变模型结构（后续多模态输入可能比较难）
+
+
+
+##### 1.3.2.2 本地部署LLM
+
+**先使用ChatGPT API，需要调整模型参数以及结构再考虑本地搭建**
+
+（也会本地搭建LLM环境，练习使用）
+
+###### **LLaMA-2**
+
+
+
+#### 1.3.3 大模型多模态输入可行性
+
+**后续涉及此部分再进行调研**
+
+
+
+## 二、计划以及实验内容
+
+### 2.1  思维图学习以及复现
+
+#### 2.1.1 任务1：思维图复现，并在工程和思路两个维度上面进行复现
+
+将排序变成两个排序，分为偶数排序和奇数排序，
+
+1. 变成两个任务，偶数拍好后奇数排序，再合并
+
+   - 数列1,2,3,4,5
+
+   - [1,3,5]
+
+   - [2,4]
+
+   - 合并
+
+2. 整个在一起里面去做，实现奇数偶数的分类，在排序
+
+   - 数列1,2,3,4,5
+
+   - [1,3,5,2,4]
+
+   - 排序
+
+3. ***对比***：**时间**、**准确率**、**输入数列的长度**、**输入数列的均衡性**、**输入的离散性**
+
+4. 心理学问卷，回答A~D，会更具选项跳到制定部分（树结构），改变成图结构
+
+##### 2.1.1.1 **实验：**将列表分为奇数列表和偶数列表，再细分之后排序合并
+
+###### **GoO设计（先不涉及多轮输出以及打分）：**
+
+这一部分是全部关于思维图中GoO的设计
+
+<img src="./assets/got_pic.jpg" alt="got_pic" style="zoom:80%;" />
+
+```python
+def got():
+    operations_graph = operations.GraphOfOperations()
+    plans = operations.Generate(1, 1)
+    operations_graph.append_operation(plans)
+    sort_list = []
+    k = 0
+    # 将初始列表分为奇数和偶数
+    for i in ["odd", "even"]:
+        list_type_odd_even = f"List {i}"
+        # 增加prompter选择器，选出奇数以及偶数的输出
+        sub_list_odd_even = operations.Selector(
+            lambda thoughts, list_id=list_type_odd_even: [
+                thought for thought in thoughts if thought.state["part"] == list_id
+            ]
+        )
+        # 将生成的prompt分开并且添加到根节点上
+        sub_list_odd_even.add_predecessor(plans)
+        operations_graph.add_operation(sub_list_odd_even)
+        generate_sublist = operations.Generate(1, 1)
+        generate_sublist.add_predecessor(sub_list_odd_even)
+        operations_graph.add_operation(generate_sublist)
+
+        # 分别将奇数、偶数的列表再分成两个子列表
+        for j in range(1, 3):
+            list_type = f"List {j}"
+            # 增加prompter选择器，选出再次拆分的
+            sub_list = operations.Selector(
+                lambda thoughts, list_id=list_type: [
+                    thought for thought in thoughts if thought.state["part"] == list_id
+                ]
+            )
+            # 给当前子列表排序
+            sub_list.add_predecessor(generate_sublist)
+            operations_graph.add_operation(sub_list)
+            sort_sub_list = operations.Generate(1, 1)
+            sort_sub_list.add_predecessor(sub_list)
+            operations_graph.add_operation(sort_sub_list)
+
+            sort_list.append(sort_sub_list)
+
+    # 合并子列表
+    aggregate_1 = operations.Aggregate(1)
+    aggregate_1.add_predecessor(sort_list[0])
+    aggregate_1.add_predecessor(sort_list[1])
+    operations_graph.add_operation(aggregate_1)
+    # 合并子列表
+    aggregate_2 = operations.Aggregate(1)
+    aggregate_2.add_predecessor(sort_list[2])
+    aggregate_2.add_predecessor(sort_list[3])
+    operations_graph.add_operation(aggregate_2)
+    # 合并合并后的子列表
+    final_aggregate = operations.Aggregate(1)
+    operations_graph.append_operation(final_aggregate)
+
+    return operations_graph
+```
+
+
+
+###### **Prompter：**
+
+这一部分是关于Prompter的设计
+
+```python
+class SortPrompter(prompter.Prompter):
+    def __init__(self):
+        # 将当前数组按照奇数偶数分离
+        self.split_even_odd_prompt = """
+        <Instruction> 
+        Split the following list of 32 numbers into 2 lists, the first list should contain all the odd numbers, the second list should contain all the even numbers.
+        Only output the final 2 lists in the following format without any additional text or thoughts!:
+        {{
+            "List odd": [3, 3, 5, 7, 1, ...],
+            "List even": [2, 2, 4, 8, ...],
+        }} 
+        </Instruction>
+        
+        <Example>
+        Input: [3, 1, 9, 3, 7, 5, 5, 4, 8, 1, 5, 3, 3, 2, 3, 0, 9, 7, 2, 2, 4, 4, 8, 5, 0, 8, 7, 3, 3, 8, 7, 0]
+        Output: 
+        {{
+            "List odd": [3, 1, 9, 3, 7, 5, 5, 1, 5, 3, 3, 3, 9, 7, 5, 7, 3, 3, 7],
+            "List even": [4, 8, 2, 0, 2, 2, 4, 4, 8, 0, 8, 8, 0]
+        }}
+        </Example>
+        
+        Input: {input}
+        """
+		
+        # 将当前列表按照顺序分成两个列表
+        self.split_prompt = """
+        <Instruction> 
+        Split the following list of {length} numbers into 2 lists, the first list should contain the first half of numbers, the second list contain the other numbers.
+        Only output the final 2 lists in the following format without any additional text or thoughts!:
+        {{
+            "List 1": [3, 4, 3, 5, 7, 8, 1, ...],
+            "List 2": [2, 9, 2, 4, 7, 1, 5, ...],
+        }} 
+        </Instruction>
+        
+        <Example>
+        Input: [3, 1, 9, 3, 7, 5, 5, 4, 8, 1, 5, 3, 3, 2, 3, 0, 9, 7, 2, 2, 4, 4, 8, 5, 0, 8, 7, 3, 3, 8, 7, 0, 9, 5, 1, 6, 7, 6, 8, 9, 0, 3, 0, 6, 3, 4, 8, 0, 6, 9, 8, 4, 1, 2, 9, 0, 4, 8, 8, 9, 9, 8, 5, 9]
+        Output: 
+        {{
+            "List 1": [3, 1, 9, 3, 7, 5, 5, 4, 8, 1, 5, 3, 3, 2, 3, 0, 9, 7, 2, 2, 4, 4, 8, 5, 0, 8, 7, 3, 3, 8, 7, 0],
+            "List 2": [9, 5, 1, 6, 7, 6, 8, 9, 0, 3, 0, 6, 3, 4, 8, 0, 6, 9, 8, 4, 1, 2, 9, 0, 4, 8, 8, 9, 9, 8, 5, 9]
+        }}
+        </Example>
+        
+        Input: {input}
+        """
+
+        # 排序当前列表
+        self.sort_prompt = """
+        <Instruction> 
+        Sort the following list of numbers in ascending order. Output only the sorted list of numbers, no additional text. 
+        </Instruction>
+
+        <Examples>
+        Input: [5, 1, 0, 1, 2, 0, 4, 8, 1, 9, 5, 1, 3, 3, 9, 7]
+        Output: [0, 0, 1, 1, 1, 1, 2, 3, 3, 4, 5, 5, 7, 8, 9, 9]
+        
+        Input: [3, 7, 0, 2, 8, 1, 2, 2, 2, 4, 7, 8, 5, 5, 3, 9, 4, 3, 5, 6, 6, 4, 4, 5, 2, 0, 9, 3, 3, 9, 2, 1]
+        Output: [0, 0, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 9]
+        
+        Input: [4, 4, 9, 7, 9, 7, 0, 0, 4, 9, 1, 7, 9, 5, 8, 7, 5, 6, 3, 8, 6, 7, 5, 8, 5, 0, 6, 3, 7, 0, 5, 3, 7, 5, 2, 4, 4, 9, 0, 7, 8, 2, 7, 7, 7, 2, 1, 3, 9, 9, 7, 9, 6, 6, 4, 5, 4, 2, 0, 8, 9, 0, 2, 2]
+        Output: [0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9]
+        </Examples>
+        
+        Input: {input}
+        """
+
+        # 按照归并排序的合并方式合并两个列表
+        self.merge_prompt = """
+        <Instruction> 
+        Merge the following 2 sorted lists of length {length1} and {length2} each, into one sorted list of length {length} using a merge sort style approach.
+        Only output the final merged list without any additional text or thoughts!:
+        </Instruction>
+        
+        <Approach>
+        To merge the two lists in a merge-sort style approach, follow these steps:
+        1. Compare the first element of both lists.
+        2. Append the smaller element to the merged list and move to the next element in the list from which the smaller element came.
+        3. Repeat steps 1 and 2 until one of the lists is empty.
+        4. Append the remaining elements of the non-empty list to the merged list.
+        </Approach>
+        
+        Merge the following two lists into one sorted list:
+        1: {input1}
+        2: {input2}
+        
+        Merged list:
+        """
+
+    # 合并两个数组的prompt生成器，其中输入state_dicts包含了两个thought
+    def aggregation_prompt(self, state_dicts: List[Dict], **kwargs) -> str:
+        assert len(state_dicts) == 2, "Expected two states for aggregation prompt."
+        len_input1 = len(string_to_list(state_dicts[0]["current"]))
+        len_input2 = len(string_to_list(state_dicts[1]["current"]))
+
+        return self.merge_prompt.format(
+            input1=state_dicts[0]["current"],
+            input2=state_dicts[1]["current"],
+            length1=len_input1,
+            length2=len_input2,
+            length=len_input1 + len_input2,
+        )
 
 
