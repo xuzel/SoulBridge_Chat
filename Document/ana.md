@@ -895,3 +895,522 @@ class SortPrompter(prompter.Prompter):
         )
 
 
+
+    
+    # 生成数组的prompter生成器
+    def generate_prompt(self, num_branches: int, original: str, current: str, method: str, **kwargs) -> str:
+        # 当current什么都没有的时候，将要传入LLM的prompt设计为将数组分为奇数以及偶数的数组
+        if current is None or current == "":
+            return self.split_even_odd_prompt.format(input=original)
+        
+        # 当当前thought的phase为1时，将已经按照奇数偶数分好的数组再次分离成两个字数组
+        if kwargs["phase"] == 1:
+            return self.split_prompt.format(length=len(string_to_list(current)), input=current)
+        
+        # 当当前thought的phase为2时，将再次分离的子数组排序
+        if kwargs["phase"] == 2:
+            return self.sort_prompt.format(input=current)
+
+```
+
+
+
+###### **Parser：**
+
+```python
+
+class SortParser(parser.Parser):
+    def __init__(self):
+        self.cache = {}
+
+    def parse_aggregation_answer(self, states: List[Dict], texts: List[str]) -> Union[Dict, List[Dict]]:
+        new_states = []
+        for text in texts:
+            new_state = states[0].copy()
+            new_state["current"] = text.replace("Output: ", '')
+            new_states.append(new_state)
+        return new_states
+
+  
+    def parse_generate_answer(self, state: Dict, texts: List[str]) -> List[Dict]:
+        new_states = []
+        for text in texts:
+            if state["current"] == "":
+                text = text[text.index("{"): text.index("}") + 1]
+                json_dict = json.loads(text)
+                for key, value in json_dict.items():
+                    new_state = state.copy()
+                    new_state["current"] = str(value)
+                    new_state["unsorted_sublist_even_odd"] = str(value)
+                    new_state["phase"] = 1
+                    new_state["part"] = key
+                    new_states.append(new_state)
+            elif state["phase"] == 1:
+                text = text[text.index("{"): text.index("}") + 1]
+                json_dict = json.loads(text)
+                for key, value in json_dict.items():
+                    new_state = state.copy()
+                    new_state["current"] = str(value)
+                    new_state["unsorted_sublist"] = str(value)
+                    new_state["phase"] = 2
+                    new_state["part"] = key
+                    new_states.append(new_state)
+            elif state["phase"] == 2:
+                sort_list = string_to_list(text.replace("Output: ", ''))
+                new_state = state.copy()
+                new_state["current"] = str(sort_list)
+                new_state["phase"] = 3
+                new_states.append(new_state)
+        return new_states
+```
+
+
+
+###### **输出：**
+
+```json
+[
+  {
+      # 第一步将初始数组按照奇数偶数拆分
+    "operation": "generate",
+    "thoughts": [
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[7, 7, 3, 9, 3, 9, 3, 1, 7, 7, 5, 7, 7, 1, 5, 5]",
+        "phase": 1,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[7, 7, 3, 9, 3, 9, 3, 1, 7, 7, 5, 7, 7, 1, 5, 5]",
+        "part": "List odd"
+      },
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[8, 0, 8, 6, 6, 8, 0, 4, 2, 8, 2, 8, 2, 6, 2]",
+        "phase": 1,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[8, 0, 8, 6, 6, 8, 0, 4, 2, 8, 2, 8, 2, 6, 2]",
+        "part": "List even"
+      }
+    ]
+  },
+  {
+      # 选择一个，这里选择的是奇数的数组
+    "operation": "selector",
+    "thoughts": [
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[7, 7, 3, 9, 3, 9, 3, 1, 7, 7, 5, 7, 7, 1, 5, 5]",
+        "phase": 1,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[7, 7, 3, 9, 3, 9, 3, 1, 7, 7, 5, 7, 7, 1, 5, 5]",
+        "part": "List odd"
+      }
+    ]
+  },
+  {
+      # 将奇数的数组再拆分成两个子列表
+    "operation": "generate",
+    "thoughts": [
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[7, 7, 3, 9, 3, 9, 3, 1]",
+        "phase": 2,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[7, 7, 3, 9, 3, 9, 3, 1, 7, 7, 5, 7, 7, 1, 5, 5]",
+        "part": "List 1",
+        "unsorted_sublist": "[7, 7, 3, 9, 3, 9, 3, 1]"
+      },
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[7, 7, 5, 7, 7, 1, 5, 5]",
+        "phase": 2,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[7, 7, 3, 9, 3, 9, 3, 1, 7, 7, 5, 7, 7, 1, 5, 5]",
+        "part": "List 2",
+        "unsorted_sublist": "[7, 7, 5, 7, 7, 1, 5, 5]"
+      }
+    ]
+  },
+  {
+      # 选择第一个奇数列表的子列表
+    "operation": "selector",
+    "thoughts": [
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[7, 7, 3, 9, 3, 9, 3, 1]",
+        "phase": 2,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[7, 7, 3, 9, 3, 9, 3, 1, 7, 7, 5, 7, 7, 1, 5, 5]",
+        "part": "List 1",
+        "unsorted_sublist": "[7, 7, 3, 9, 3, 9, 3, 1]"
+      }
+    ]
+  },
+  {
+      # 排序第一个奇数列表的子列表
+    "operation": "generate",
+    "thoughts": [
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[1, 3, 3, 3, 7, 7, 9, 9]",
+        "phase": 3,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[7, 7, 3, 9, 3, 9, 3, 1, 7, 7, 5, 7, 7, 1, 5, 5]",
+        "part": "List 1",
+        "unsorted_sublist": "[7, 7, 3, 9, 3, 9, 3, 1]"
+      }
+    ]
+  },
+  {
+      # 选择第二个奇数列表的子列表
+    "operation": "selector",
+    "thoughts": [
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[7, 7, 5, 7, 7, 1, 5, 5]",
+        "phase": 2,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[7, 7, 3, 9, 3, 9, 3, 1, 7, 7, 5, 7, 7, 1, 5, 5]",
+        "part": "List 2",
+        "unsorted_sublist": "[7, 7, 5, 7, 7, 1, 5, 5]"
+      }
+    ]
+  },
+  {
+      # 排序第二个奇数列表的子列表
+    "operation": "generate",
+    "thoughts": [
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[1, 5, 5, 7, 7, 7, 7, 7]",
+        "phase": 3,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[7, 7, 3, 9, 3, 9, 3, 1, 7, 7, 5, 7, 7, 1, 5, 5]",
+        "part": "List 2",
+        "unsorted_sublist": "[7, 7, 5, 7, 7, 1, 5, 5]"
+      }
+    ]
+  },
+  {
+      # 选择生成出来的偶数列表
+    "operation": "selector",
+    "thoughts": [
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[8, 0, 8, 6, 6, 8, 0, 4, 2, 8, 2, 8, 2, 6, 2]",
+        "phase": 1,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[8, 0, 8, 6, 6, 8, 0, 4, 2, 8, 2, 8, 2, 6, 2]",
+        "part": "List even"
+      }
+    ]
+  },
+  {
+      # 将选择出来的偶数列表拆分为两个子列表
+    "operation": "generate",
+    "thoughts": [
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[8, 0, 8, 6, 6, 8, 0, 4, 2]",
+        "phase": 2,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[8, 0, 8, 6, 6, 8, 0, 4, 2, 8, 2, 8, 2, 6, 2]",
+        "part": "List 1",
+        "unsorted_sublist": "[8, 0, 8, 6, 6, 8, 0, 4, 2]"
+      },
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[8, 2, 8, 2, 6, 2]",
+        "phase": 2,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[8, 0, 8, 6, 6, 8, 0, 4, 2, 8, 2, 8, 2, 6, 2]",
+        "part": "List 2",
+        "unsorted_sublist": "[8, 2, 8, 2, 6, 2]"
+      }
+    ]
+  },
+  {
+      # 选择第一个偶数列表的子列表
+    "operation": "selector",
+    "thoughts": [
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[8, 0, 8, 6, 6, 8, 0, 4, 2]",
+        "phase": 2,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[8, 0, 8, 6, 6, 8, 0, 4, 2, 8, 2, 8, 2, 6, 2]",
+        "part": "List 1",
+        "unsorted_sublist": "[8, 0, 8, 6, 6, 8, 0, 4, 2]"
+      }
+    ]
+  },
+  {
+      # 排序第一个偶数列表的子列表
+    "operation": "generate",
+    "thoughts": [
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[0, 0, 2, 4, 6, 6, 8, 8, 8]",
+        "phase": 3,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[8, 0, 8, 6, 6, 8, 0, 4, 2, 8, 2, 8, 2, 6, 2]",
+        "part": "List 1",
+        "unsorted_sublist": "[8, 0, 8, 6, 6, 8, 0, 4, 2]"
+      }
+    ]
+  },
+  {
+      # 选择偶数列表的第二个子列表
+    "operation": "selector",
+    "thoughts": [
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[8, 2, 8, 2, 6, 2]",
+        "phase": 2,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[8, 0, 8, 6, 6, 8, 0, 4, 2, 8, 2, 8, 2, 6, 2]",
+        "part": "List 2",
+        "unsorted_sublist": "[8, 2, 8, 2, 6, 2]"
+      }
+    ]
+  },
+  {
+      # 排序偶数列表的第二个子列表
+    "operation": "generate",
+    "thoughts": [
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[2, 2, 2, 6, 8, 8]",
+        "phase": 3,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[8, 0, 8, 6, 6, 8, 0, 4, 2, 8, 2, 8, 2, 6, 2]",
+        "part": "List 2",
+        "unsorted_sublist": "[8, 2, 8, 2, 6, 2]"
+      }
+    ]
+  },
+  {
+      # 合并奇数列表
+    "operation": "aggregate",
+    "thoughts": [
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[1, 1, 3, 3, 3, 5, 5, 7, 7, 7, 7, 7, 7, 7, 9, 9]",
+        "phase": 3,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[7, 7, 3, 9, 3, 9, 3, 1, 7, 7, 5, 7, 7, 1, 5, 5]",
+        "part": "List 1",
+        "unsorted_sublist": "[7, 7, 3, 9, 3, 9, 3, 1]"
+      }
+    ]
+  },
+  {
+      # 合并偶数列表
+    "operation": "aggregate",
+    "thoughts": [
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[0, 0, 2, 2, 2, 4, 6, 6, 8, 8, 8, 8, 8, 8]",
+        "phase": 3,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[8, 0, 8, 6, 6, 8, 0, 4, 2, 8, 2, 8, 2, 6, 2]",
+        "part": "List 1",
+        "unsorted_sublist": "[8, 0, 8, 6, 6, 8, 0, 4, 2]"
+      }
+    ]
+  },
+  {
+      # 全部合并（发现答案错误）
+    "operation": "aggregate",
+    "thoughts": [
+      {
+        "original": "[8, 7, 0, 7, 8, 6, 3, 6, 6, 9, 8, 0, 3, 9, 3, 1, 7, 7, 4, 2, 5, 8, 2, 8, 7, 2, 1, 2, 6, 5, 5, 2]",
+        "current": "[0, 0, 1, 1, 2, 2, 2, 3, 3, 3, 4, 5, 5, 6, 6, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 9, 9]",
+        "phase": 3,
+        "method": "got",
+        "unsorted_sublist_even_odd": "[7, 7, 3, 9, 3, 9, 3, 1, 7, 7, 5, 7, 7, 1, 5, 5]",
+        "part": "List 1",
+        "unsorted_sublist": "[7, 7, 3, 9, 3, 9, 3, 1]"
+      }
+    ]
+  },
+  {
+    "prompt_tokens": 5489,
+    "completion_tokens": 510,
+    "cost": 0.0092535
+  }
+]
+```
+
+
+
+###### **实验总结：**
+
+从上面可以看出，最后生成的思路按照我们所期望的运行，但是准确率比较低，跑了**100个样本，正确率为0，其中排序前后数组长度相同的概率为8%**
+
+**官方paper中判断准确率:**
+
+<img src="./assets/Screenshot from 2023-10-07 00-52-01.png" alt="Screenshot from 2023-10-07 00-52-01" style="zoom:80%;" />
+
+**官方判断准确率的标准:**
+
+![Screenshot from 2023-10-07 00-56-10](./assets/Screenshot from 2023-10-07 00-56-10.png)
+
+**所以, 官方的准确率不可信.**对此，我运行了一遍官方排序32位数组的代码，使用我们自己的：
+
+**官方准确率**
+
+- 按照排序正确的数组计算：**8%**
+- 按照每一个元素位置计算：**62%**
+
+**官方代码排序后数组长度一致：21%**
+
+
+
+###### **在实验后对于LLM的一些思考：**
+
+为什么正确率会这么低，到底是那一步出了问题，再这个基础上，我给官方代码的全部输出做了可视化处理，并且判断思维图中的每一个thought有没有生成所期望的结果，结果如下：
+
+- **官方代码中排序的思维图操作以及准确率：**
+
+  - 将长数组拆分：**准确率99%**
+
+  - 将拆分后的短数组排序：**准确率59%**
+
+  - 将排好序的数组归并：**准确率3%**
+
+<img src="./assets/result.png" alt="result" style="zoom:67%;" />
+
+可以看出，模型在归并上面的效果非常差（基本上总体准确率低都在这个上面），那么，为什么模型再归并上面的得分这么低？在官方代码中，模型的归并的prompt如下：
+
+```python
+got_merge_prompt = """<Instruction> Merge the following 2 sorted lists of length {length1} each, into one sorted list of length {length2} using a merge sort style approach.
+Only output the final merged list without any additional text or thoughts!:</Instruction>
+
+<Approach>
+To merge the two lists in a merge-sort style approach, foloow these steps:
+1. Compare the first element of both lists.
+2. Append the smaller element to the merged list and move to the next element in the list from which the smaller element came.
+3. Repeat steps 1 and 2 until one of the lists is empty.
+4. Append the remaining elements of the non-empty list to the merged list.
+</Approach>
+
+Merge the following two lists into one sorted list:
+1: {input1}
+2: {input2}
+
+Merged list:
+```
+
+可以看出来，分为以下三个步骤：
+
+1. 对比
+2. 选择
+3. 拷贝
+
+**为了更加精确的定位到问题，我将官方的输出做了一个可视化，其中某一个示例如下：**（其中代码以及全部输出的可视化文件已归档至公司服务器）
+
+[完整图像](./assets/graph_0.png)
+
+![graph_0](./assets/graph_0.png)
+
+可以看出，在归并的前两个步骤没有什么问题，反而是最后将多出来的那些数字**拷贝**到归并数组上发生了错误，基本上都是**拷贝的时候少了几个数**或者**多了几个数**，所以，现在的思考就是为什么会出现这种情况：
+
+###### **对于思维图的一些思考:**
+
+1. 官方的controller好像没有关于图的一些操作，官方的controller只是将每一个thought加入到一个队列里面，之后按照顺序将这些thought一个一个pop出来执行，之后将执行产生的thought在加入到队列末尾，也就是说，图中的一些寻路算法，一些分配算法好像没法用
+
+
+
+2. 根据1）中的一些看法，发现按照这个架构设计的思维图感觉更像是思维树，之后同意思维树中的一些分支交汇，但是不能像思维树那样回溯之前的节点，也就是说，思维图的边方向恒指向GoO的output节点（我看了其他几个官方example发现是这样的，没有环也没有回溯，没有在图中的一个分叉选择其中一个分叉而放弃另外一个分支），比如再排序的例子中，模型再某一个结点的思维出现错误，无法回到之前或者用之前的知识来纠正错误
+
+
+
+3. 官方实现的是静态思维图，也就是思维图创建了之后就固定切不可以改变，不能动态的增加一些思维操作（比如排序中如果排序分数不高则将数组继续分），这就导致了如果在某一类小问题里面思维图的泛化能力也一般般（比如都是[排序问题, 排序32位的数组需要手动设计思维图分成4个8位的数组，排序64位数组就需要将其手动分为18个数组或者先分成四个在将其分成十六个）
+
+
+
+4. 补充一下2），感觉思维图更像是将人类解决一个问题的方式强加给LLM，比如排序数组，思维图让模型先让LLM将一个大数组分成一些小数组，之后让LLM给每每一个子数组排序，之后在merge两两数组直到只有一个数组为止，我有种说不出来的感觉，就是图应该不是这样用的吧，就像蒙特卡洛搜索树这样在图里面能用的算法全都不能用了，图融合其他节点的特点和图中环迭代的特点感觉就，怎么说呢，就感觉没有把图的特点和潜力压榨出来（但是按照正常逻辑我没想出来有哪类问题需要使用环迭代多次来解决）
+
+
+
+5. 思维图的当前thought强依赖于前面的thought，如果前面thought的结果有一个是错的，那么后面的都是错的，也就是说每一步微小的错误概率再经过思维图后会被放大，图越复杂最后错误的概率越大
+
+**LLM在数学问题上解答的embedding可能有问题，同时使用LLM来解决数学问题似乎没有什么实际意义，应此将目标转向[研究LLM在博弈问题上面的表现并改进](##研究LLM在博弈问题上面的表现并改进)**
+
+
+
+##### 2.1.2 任务2：使用langchain结合简单的prompt工程构建基本框架
+
+###### 2.1.2.1 最简单的prompt
+
+```python
+        self.template = """
+        你现在是一个专注于抑郁症诊断的心理医生，你需要以抑郁自评量表（SDS）中的20个问题为主与对话者聊天，聊天中使用轻松友好的语气问出来，不要直接让用户回答从无或偶尔、有时、经常、总是如此，你需要让用户在闲聊之中说出关键信息，并且需要给出必要的回复，这20个问题分别是：
+        1 我感到情绪沮丧，郁闷。 
+        *2 我感到早晨心情最好。
+        3 我要哭或想哭。
+        4 我夜间睡眠不好。
+        *5 我吃饭像平常一样多。
+        *6 我的性功能正常。
+        7 我感到体重减轻。
+        8 我为便秘烦恼。
+        9 我的心跳比平时快。
+        10 我无故感到疲乏。
+    
+    
+        你需要一个个问题和对方交流，当你觉得用户在这个问题上面说清楚了，你可以给用户在这个问题上面评级，并且告诉用户他在这个问题上你的分析和给用户评的级别，之后直接问用户下一个问题，但是如果你觉得用户的回答并不能让你做出比较好的分析，你可以继续深入和用户聊天，评级标准如下：
+        SDS 按症状出现频度评定，分 4 个等级：从无或偶尔、有时、经常、总是如此。若为正向评分题，依次评分粗分 1、2、3、4。反向评分题（前文中有*号者），则评分 4、3、2、1。总分在 20—80 分之间。
+        方法一：抑郁严重度指数=各条目累计分/80（最高总分）。指数范围为0.25～1.0，指数越高，抑郁程度越重。抑郁严重度指数在 0.5 以下者为无抑郁；0.50～0.59 为轻微至轻度抑郁；0.60～0.69 为中至重度抑郁；0.70 以上为重度抑郁。
+        方法二：总分乘以 1.25 取整数，即得标准分。低于50 分者为正常；50-60分者为轻度焦虑；61-70 分者为中度焦虑，70 分以上者为重度焦虑。
+    
+        之后，当你问完全部问题的时候，可以出一个详细的分析，更具以下规定（注意，必须要当你问完全部问题之后，直接给出详细分析以及建议）：
+        ①正常。您最近没有抑郁情绪。请继续保持。
+        ②轻度抑郁状态。请进行自我调节，或寻求他人的支持、帮助。
+        您存在的主要问题有：你的分析
+        ③中度抑郁状态。请找心理专家咨询。您存在的主要问题有：你的分析
+        ④重度抑郁状态。请尽快找心理专家咨询。您存在的主要问题有：你的分析
+        {history}
+        Human: {human_input}
+        Assistant:"""
+```
+
+
+
+###### 2.1.2.2 UI以及示例展示
+
+![Screenshot from 2023-10-09 14-50-52](./assets/Screenshot from 2023-10-09 14-50-52.png)
+
+![Screenshot from 2023-10-09 14-51-03](./assets/Screenshot from 2023-10-09 14-51-03.png)
+
+![Screenshot from 2023-10-09 14-51-15](./assets/Screenshot from 2023-10-09 14-51-15.png)
+
+
+
+
+
+**发现问题，思考问题的原因、解决问题**
+
+**分析每一步的错误频率**
+
+1. 思维图（意义最大，难度最大）
+2. langchain做一个心理学问卷（链状、树状），工程问题，相对简单
+   1. 找一个问卷，使用langchain分析用户有没有心理学问题
+   2. 通过多轮对话，按照规定话题去聊天的话题
+3. 给大语言模型做心理学检测
+
+
+
+## 研究LLM在博弈问题上面的表现并改进
+
+### 1. 评估LLM在博弈问题上面的表现
+
+使用耶鲁大学2011年博弈论期末考试题以及网络上的一些经典例子：
+
+| 题型                                   | 模型   | 正确率  |
+| -------------------------------------- | ------ | ------- |
+| 基本概念                               | gpt3.5 | 4/5     |
+| 经典问题（基本上搜博弈论都会举的例子） | gpt4   | 4/6     |
+| 经典问题（基本上搜博弈论都会举的例子） | gpt3.5 | 3/6     |
+| 耶鲁大学2011年博弈论                   | gpt3.5 | 50%以下 |
+
+**#TODO**
