@@ -39,6 +39,79 @@
     </div>
 
 {# 输入框 #}
+ <div class="chat-list-wrapper">
+      <div class="chat-list-header">History chat <span class="c-number">4</span>  {# TODO #}
+        <svg class="list-header-arrow" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="3" class="feather feather-chevron-up" viewBox="0 0 24 24">
+          <defs/>
+          <path d="M18 15l-6-6-6 6"/>
+        </svg>
+      </div>
+        {# TODO #}
+      <ul class="chat-list active">
+
+        <li class="chat-list-item active">
+          <img src="{% static 'img/robot.png' %}" alt="chat">
+          <span class="chat-list-name">2023-10-9 12:xx</span>
+        </li>
+
+        <li class="chat-list-item active">
+          <img src="{% static 'img/robot.png' %}" alt="chat">
+          <span class="chat-list-name">2023-10-9 13:xx</span>
+        </li>
+
+      </ul>
+    </div>
+  </div>
+  <div class="app-main">
+    <div class="chat-wrapper" id="main_chat">
+
+      <div class="message-wrapper">
+        <img class="message-pp" src="{% static 'img/robot.png' %}" alt="profile-pic">
+        <div class="message-box-wrapper">
+          <div class="message-box">
+           您好，这里是一个心理测试的聊天软件，意在检测用户是否患有抑郁症，接下来我会问你大概20个问题，你可以告诉我你现在相关的现状，越详细越好哦<br><br>
+              比如我问你：你是否经常感觉到郁闷，并且情绪低落<br>
+              你可以回答：是的，我从xxx时候就开始这样子，这种郁闷莫名奇妙的，有些时候会持续yyy...<br><br>
+              注意：我们不会存储用户信息，你说的越详细越有助于我们的评估
+          </div>
+{#          <span>9h ago</span>#}
+        </div>
+      </div>
+
+{#      <div class="message-wrapper reverse">#}
+{#        <img class="message-pp" src="{% static 'img/custom.png' %}" alt="profile-pic">#}
+{#        <div class="message-box-wrapper">#}
+{#          <div class="message-box">#}
+{#            山上有一座庙#}
+{#          </div>#}
+{#          <span>9h ago</span>#}
+{#        </div>#}
+{#      </div>#}
+
+    </div>
+
+
+    <div class="chat-input-wrapper">
+      <button class="chat-attachment-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="feather feather-paperclip" viewBox="0 0 24 24">
+          <defs/>
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+        </svg>
+      </button>
+      <div class="input-wrapper">
+        <input type="text" class="chat-input" placeholder="Enter your message here" id="txt">
+        <button class="emoji-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="feather feather-smile" viewBox="0 0 24 24">
+          <defs/>
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/>
+        </svg>
+      </button>
+      </div>
+        {# TODO #}
+      <button type="button" class="chat-send-btn" onclick="sendmessage()">Send</button>
+    </div>
+  </div>
 
 
 
