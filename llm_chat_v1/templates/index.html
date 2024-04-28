@@ -282,7 +282,41 @@
 </div>
 
 {# javascript 脚本 #}
+<script type="text/javascript" src="{% static 'js/script.js'%}"></script>
+<script>
+    socket = new WebSocket("ws://127.0.0.1:8000/test_socket/")
+    socket.onmessage = function (event){
+        let newMessage = document.createElement("div");
+        newMessage.className = "message-wrapper";
+        newMessage.innerHTML = `
+            <img class="message-pp" src="{% static 'img/robot.png' %}" alt="profile-pic">
+            <div class="message-box-wrapper">
+                <div class="message-box">
+                    ${event.data}
+                </div>
+            </div>`;
+        document.getElementById("main_chat").appendChild(newMessage);
+    }
 
+    function sendmessage(){
+        let tag = document.getElementById("txt");
+        socket.send(tag.value);
+        let newMessage = document.createElement("div");
+        newMessage.className = "message-wrapper reverse";
+        newMessage.innerHTML = `
+            <img class="message-pp" src="{% static 'img/custom.png' %}" alt="profile-pic">
+            <div class="message-box-wrapper">
+                <div class="message-box">
+                    ${tag.value}
+                </div>
+            </div>`;
+        document.getElementById("main_chat").appendChild(newMessage);
+        tag.value = "";
+
+    }
+
+
+</script>
 </body>
 
 </html>
